@@ -1,0 +1,20 @@
+# Data files — too large / sensitive for git
+*.csv
+*.xlsx
+*.xls
+*.pkl
+*.pickle
+*.parquet
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.cache/
+
+# Environment
+.env
+*.log

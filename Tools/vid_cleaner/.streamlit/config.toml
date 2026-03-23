@@ -1,0 +1,15 @@
+[server]
+port = 8502
+maxUploadSize = 10000
+maxMessageSize = 10000
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"
+primaryColor = "#2563EB"
+backgroundColor = "#F8FAFC"
+secondaryBackgroundColor = "#F1F5F9"
+textColor = "#0F172A"
+font = "sans serif"

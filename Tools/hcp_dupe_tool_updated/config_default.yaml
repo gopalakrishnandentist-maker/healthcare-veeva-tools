@@ -1,0 +1,470 @@
+# ─────────────────────────────────────────────────────────────────────
+#  HCP / HCO Duplicate Identification Tool — Configuration
+# ─────────────────────────────────────────────────────────────────────
+#  Copy this file and adjust to match your extract layout and
+#  business rules.  Any key left blank falls back to a sensible default.
+# ─────────────────────────────────────────────────────────────────────
+
+# ── Column Mapping ──────────────────────────────────────────────────
+# Map logical field names to actual column headers in your extract.
+# Wildcards (*) are supported for phone/email columns.
+columns:
+  # Required
+  hcp_vid:          "hcp.vid__v (VID)"
+  hcp_last_name:    "hcp.last_name__v (LAST NAME)"
+
+  # Name fields (optional but strongly recommended)
+  hcp_first_name:   "hcp.first_name__v (FIRST NAME)"
+  hcp_middle_name:  "hcp.middle_name__v (MIDDLE NAME)"
+  hcp_full_name:    "hcp.source_full_name__v (SOURCE FULL NAME)"
+
+  # Specialty (up to 4 — leave blank if not present)
+  specialty_1:      "hcp.specialty_1__v (SPECIALTY 1)"
+  specialty_2:      "hcp.specialty_2__v (SPECIALTY 2)"
+  specialty_3:      "hcp.specialty_3__v (SPECIALTY 3)"
+  specialty_4:      "hcp.specialty_4__v (SPECIALTY 4)"
+
+  # License
+  license_number:   "license.license_number__v (LICENSE)"
+  license_body:     "license.licensing_body__v (LICENSING BODY)"
+  license_status:   "license.license_status__v (LICENSE STATUS)"
+
+  # HCO affiliation (hierarchical — leave blank if not present)
+  hco_vid:              "hco.hco_vid__v (HCO_VID__V)"
+  parent_hco_vid:       "hco.parent_hco_vid__v (PARENT_HCO_VID__V)"
+  grandparent_hco_vid:  "hco.grandparent_hco_vid__v (GRANDPARENT_HCO_VID__V)"
+
+  # Address
+  city_cda:         "hcp.city_cda__v (CITY (CDA))"
+  addr_city:        "address.locality__v (CITY)"
+  addr_state:       "address.administrative_area__v (STATE/PROVINCE)"
+  addr_postal:      "address.postal_code__v (ZIP/POSTAL CODE)"
+
+  # Status / metadata
+  hcp_status:       "hcp.hcp_status__v (STATUS)"
+  candidate_record: "hcp.candidate_record__v (CANDIDATE RECORD)"
+
+  # Contact columns — auto-detected via pattern matching
+  phone_pattern:    "hcp.phone_*"
+  email_pattern:    "hcp.email_*"
+
+  # ── HCO Columns ──────────────────────────────────────────────────
+  hco_entity_vid:       "hco.vid__v (VID)"
+  hco_name:             "hco.primary_name__v (NAME)"
+  hco_type:             "hco.hco_type__v (TYPE)"
+  hco_phone:            "hco.phone__v (PHONE)"
+  hco_fax:              "hco.fax__v (FAX)"
+  hco_city:             "hco.city__v (CITY)"
+  hco_state:            "hco.state__v (STATE)"
+  hco_postal:           "hco.postal_code__v (POSTAL CODE)"
+  hco_addr_line1:       "hco.address_line_1__v (ADDRESS LINE 1)"
+  hco_addr_line2:       "hco.address_line_2__v (ADDRESS LINE 2)"
+  hco_status:           "hco.hco_status__v (STATUS)"
+
+# ── Shared Contact Thresholds ──────────────────────────────────────
+shared_contact:
+  # A phone/email appearing on >= this many VIDs is treated as "shared"
+  # (e.g., hospital front-desk number). Shared contacts are down-weighted
+  # in pair scoring and excluded from AUTO-MERGE contact rules.
+  threshold: 5
+
+# ── Blocking Parameters ────────────────────────────────────────────
+blocking:
+  # Maximum block size before truncation (guards against combinatorial
+  # explosion on very common last-name + city combos).
+  max_block_size: 500
+
+  # Enable phonetic (Soundex) blocking on last name.
+  # Catches spelling variations like Krishnan/Krishan.
+  phonetic_blocking: true
+
+  # Enable first-initial + last-name blocking (broader recall).
+  first_initial_blocking: true
+
+# ── Name Matching ──────────────────────────────────────────────────
+name_matching:
+  # Suffixes/titles to strip before comparison
+  strip_suffixes:
+    - "md"
+    - "do"
+    - "phd"
+    - "mbbs"
+    - "bds"
+    - "mds"
+    - "ms"
+    - "dr"
+    - "jr"
+    - "sr"
+    - "ii"
+    - "iii"
+    - "iv"
+
+  # Thresholds for fuzzy name similarity (0-100)
+  strong: 92
+  medium: 85
+  weak:   75
+
+# ── HCP Auto-Merge Rules ──────────────────────────────────────────
+# Each rule fires in order.  First match wins (pair classified, skip rest).
+hcp_auto_rules:
+  G1_name_spec_hco:
+    name_min: 92
+    requires: [specialty_overlap, hco_overlap]
+    description: "Name + Specialty + HCO affiliation match"
+
+  G2_name_spec_pin:
+    name_min: 92
+    requires: [specialty_overlap, pin_overlap]
+    description: "Name + Specialty + Postal code match"
+
+  G3_name_spec_city:
+    name_min: 92
+    requires: [specialty_overlap, city_overlap]
+    description: "Name + Specialty + City match"
+
+  G4_license_match:
+    name_min: 80
+    requires: [active_license_match]
+    description: "Active license match + reasonable name"
+
+  G5_phone_email:
+    name_min: 85
+    requires: [phone_overlap, email_overlap, not_shared_contact]
+    description: "Phone + Email match (non-shared contacts)"
+
+  G6_email_name:
+    name_min: 92
+    requires: [email_overlap, not_shared_contact]
+    description: "Email + Strong name match"
+
+# ── HCP Not-Duplicate Rules ───────────────────────────────────────
+hcp_not_dup_rules:
+  N1_active_license_conflict:
+    description: "Both have active licenses but none overlap"
+    requires: [active_license_conflict]
+    # Exception: still send to REVIEW if strong contact evidence
+    exception_if: [phone_and_email_overlap]
+
+  N2_different_cities:
+    name_min: 92
+    requires: [specialty_overlap, cities_explicitly_different]
+    description: "Same name + specialty but explicitly different cities"
+    exception_if: [phone_and_email_overlap, license_match]
+
+# ── HCP Review Scoring Weights ─────────────────────────────────────
+hcp_review_scoring:
+  # Positive signals
+  name_strong:          35
+  name_medium:          25
+  name_weak:            15
+  specialty_match:      30
+  hco_overlap:          25
+  pin_match:            25
+  city_match:           20
+  state_match:          15
+  geo_support:          10
+  license_match:        40
+  phone_email_match:    20
+  email_match:          15
+  phone_match:          10
+
+  # Negative signals
+  specialty_conflict:  -15
+  different_cities:    -25   # raised from -20 (HCPs mobile but city mismatch still weakens case)
+  candidate_record:    -10
+
+  # Minimum score to land in REVIEW (below → NOT_DUP)
+  review_threshold:     55   # raised from 50 — eliminates weakest-signal pairs (name_weak + spec + geo only)
+
+  # Score tiers for comment generation
+  high_confidence:      80
+  medium_high:          70
+  medium:               60
+
+# ── HCO Auto-Merge Rules ──────────────────────────────────────────
+hco_auto_rules:
+  H1_name_addr_phone:
+    name_min: 90
+    requires: [address_overlap, phone_or_fax_overlap]
+    description: "Name + Address + Phone/Fax match"
+
+  H2_name_addr_type:
+    name_min: 92
+    requires: [address_overlap, type_match]
+    description: "Name + Address + Same type"
+
+  H3_name_phone_type:
+    name_min: 90
+    requires: [phone_or_fax_overlap, type_match]
+    description: "Name + Phone/Fax + Same type"
+
+# ── HCO Review Scoring Weights ─────────────────────────────────────
+# Weights validated on Sanofi BC HCO (19,164 parent HCOs, India, 2026-03-19)
+# Address-priority model: address is ground truth, name is confirmation.
+hco_review_scoring:
+  address_match:        50   # mandatory gate + primary scorer (was 30)
+  postal_match:         30   # exact postal = very strong (was 25)
+  phone_match:          25   # exact phone = very strong (was 20)
+  name_strong:          25   # ≥92% locality-stripped name (was 35)
+  fax_match:            15
+  name_medium:          15   # ≥85% (was 25)
+  type_match:           10   # (was 15)
+  city_match:           10   # implied by address gate (was 20)
+  acronym_match:        20   # e.g., GSV = Ganesh Siddha Venkateswara (new)
+  name_weak:             8   # ≥75% (was 15)
+  state_match:           5   # (was 10)
+
+  different_type:      -15   # (was -20)
+  different_city:      -30   # heavy penalty — city mismatch = wrong HCO (was -15)
+
+  review_threshold:     70   # (was 50) — low-signal pairs eliminated
+  high_confidence:      90   # (was 80)
+  medium:               75   # (was 60)
+
+# ── Profile Type Configuration ───────────────────────────────────
+# Different entity types need different normalization and thresholds.
+# Selected in the UI sidebar or via --profile-type CLI flag.
+profile_type: auto   # auto | hcp | hco | stockist
+
+profile_types:
+  hcp:
+    description: "Healthcare Professional"
+
+  hco:
+    description: "Healthcare Organization (Hospital, Clinic)"
+    strip_prefixes: []
+    strip_suffixes: []
+
+  stockist:
+    description: "Pharmaceutical Stockist / Distributor"
+    # Prefixes stripped before name comparison (normalized lowercase)
+    strip_prefixes:
+      - "m s"
+      - "ms"
+      - "messrs"
+      - "shri"
+      - "smt"
+      - "sri"
+      - "mr"
+      - "mrs"
+    # Suffixes stripped (multi-word phrases, normalized lowercase)
+    strip_suffixes:
+      - "medical agency"
+      - "medical agencies"
+      - "medical store"
+      - "medical stores"
+      - "medical hall"
+      - "pharma"
+      - "pharma distributors"
+      - "pharmaceutical"
+      - "pharmaceuticals"
+      - "distributors"
+      - "distributor"
+      - "agencies"
+      - "agency"
+      - "enterprises"
+      - "enterprise"
+      - "sales"
+      - "sales centre"
+      - "sales center"
+      - "traders"
+      - "trading"
+      - "trading co"
+      - "company"
+      - "co"
+      - "pvt ltd"
+      - "pvt"
+      - "ltd"
+      - "private limited"
+      - "limited"
+    # Tighter auto-merge thresholds for stockist data
+    hco_auto_rule_overrides:
+      H1_name_addr_phone:
+        name_min: 93
+      H2_name_addr_type:
+        name_min: 95
+      H3_name_phone_type:
+        name_min: 93
+    # HCO type values that indicate stockist data (for auto-detection)
+    auto_detect_types:
+      - "pharmacy, retail"
+      - "pharmacy retail"
+      - "distributor"
+      - "stockist"
+      - "wholesale"
+      - "wholesaler"
+      - "c&f agent"
+      - "c and f"
+      - "clearing and forwarding"
+
+# ── Specialty Synonyms ─────────────────────────────────────────────
+# Groups of specialty names treated as equivalent during matching.
+# Synonym matches count as full specialty matches in AUTO rules,
+# REVIEW scoring, and blocking key generation.
+specialty_synonyms:
+  - group: "general_medicine"
+    names:
+      - "general medicine"
+      - "gp"
+      - "general practitioner"
+      - "general practice"
+      - "family medicine"
+      - "family practice"
+      - "internal medicine"
+      - "medicine"
+      - "physician"
+
+  - group: "pediatrics"
+    names:
+      - "pediatrics"
+      - "paediatrics"
+      - "pediatric medicine"
+      - "paediatric medicine"
+      - "child health"
+
+  - group: "obstetrics_gynecology"
+    names:
+      - "obstetrics and gynecology"
+      - "obstetrics and gynaecology"
+      - "obstetrics gynecology"
+      - "obstetrics gynaecology"
+      - "ob gyn"
+      - "obgyn"
+      - "gynecology"
+      - "gynaecology"
+
+  - group: "orthopedics"
+    names:
+      - "orthopedics"
+      - "orthopaedics"
+      - "orthopedic surgery"
+      - "orthopaedic surgery"
+      - "ortho"
+
+  - group: "ophthalmology"
+    names:
+      - "ophthalmology"
+      - "eye"
+      - "eye specialist"
+
+  - group: "ent"
+    names:
+      - "ent"
+      - "otorhinolaryngology"
+      - "otolaryngology"
+      - "ear nose throat"
+      - "ear nose and throat"
+
+  - group: "dermatology"
+    names:
+      - "dermatology"
+      - "dermatology and venereology"
+      - "skin"
+      - "skin specialist"
+
+  - group: "cardiology"
+    names:
+      - "cardiology"
+      - "cardiac medicine"
+      - "cardiovascular medicine"
+      - "cardiovascular disease"       # Veeva India exact string
+      - "cardiovascular diseases"
+      - "interventional cardiology"
+
+  - group: "endocrinology"
+    names:
+      - "endocrinology"
+      - "endocrinology, diabetes, & metabolism"   # Veeva India exact string
+      - "endocrinology diabetes & metabolism"
+      - "endocrinology diabetes and metabolism"
+      - "diabetology"
+      - "diabetes and endocrinology"
+      - "diabetes"
+      - "diabetes mellitus"
+
+  - group: "psychiatry"
+    names:
+      - "psychiatry"
+      - "psychological medicine"
+      - "mental health"
+
+  - group: "pulmonology"
+    names:
+      - "pulmonology"
+      - "pulmonary medicine"
+      - "respiratory medicine"
+      - "chest medicine"
+      - "chest specialist"
+
+  - group: "gastroenterology"
+    names:
+      - "gastroenterology"
+      - "gastro"
+      - "gastroenterologist"
+
+  - group: "nephrology"
+    names:
+      - "nephrology"
+      - "renal medicine"
+      - "kidney specialist"
+
+  - group: "urology"
+    names:
+      - "urology"
+      - "urological surgery"
+
+  - group: "general_surgery"
+    names:
+      - "general surgery"
+      - "surgery"
+      - "surgeon"
+
+  - group: "radiology"
+    names:
+      - "radiology"
+      - "radiodiagnosis"
+      - "diagnostic radiology"
+
+  - group: "anesthesiology"
+    names:
+      - "anesthesiology"
+      - "anaesthesiology"
+      - "anesthesia"
+      - "anaesthesia"
+
+  - group: "dentistry"
+    names:
+      - "dentistry"
+      - "dental"
+      - "dental surgeon"
+      - "dental surgery"
+
+# ── Indian Common Name Detection ──────────────────────────────────
+# Prevents false auto-merges for common Indian names (e.g., Rajesh Kumar)
+# when the only matching signals are name + specialty + city.
+common_name_detection:
+  enabled: true
+  # Require BOTH first AND last name to be in the common-names dictionary.
+  # If false, a single common component is enough to flag as common.
+  require_both_parts_common: true
+  # Region context (future extensibility for non-Indian data)
+  region: india
+
+# ── Effort Avoidance / Time Saved ─────────────────────────────────
+# Manual review velocity (suspect pairs resolved per hour by a human
+# data steward).  Used to estimate hours saved via automation.
+# Set to your team's observed throughput; default based on 6-7 pairs/hr.
+manual_review:
+  pairs_per_hour: 6.5
+
+# ── Output Options ─────────────────────────────────────────────────
+output:
+  # Include enrichment columns (names, specialties, cities) alongside
+  # each VID in the output pairs so reviewers don't have to cross-ref.
+  enrich_output: true
+
+  # Write both XLSX and CSV variants
+  write_csv: true
+
+  # Max width for contact string columns in output (chars)
+  max_contact_display: 200
